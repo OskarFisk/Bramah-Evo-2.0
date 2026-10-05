@@ -19,9 +19,9 @@
     <application
         android:name=".BrahmaConnectApplication"
         android:allowBackup="false"
-        android:icon="@drawable/ic_brahma_launcher"
+        android:icon="@drawable/ic_brahma_evo_v3"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/ic_brahma_launcher"
+        android:roundIcon="@drawable/ic_brahma_evo_v3"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.BrahmaConnect">
