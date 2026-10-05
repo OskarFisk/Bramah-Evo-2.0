@@ -17,6 +17,7 @@ mss
 Pillow
 psutil
 comtypes
+pywin32
 pycaw               
 instagrapi
 win10toast          

@@ -6,6 +6,11 @@ on:
     paths:
       - "Brahma-Ai-Evo-main/**"
       - ".github/workflows/build-windows.yml"
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -29,6 +34,12 @@ jobs:
         run: pyinstaller --noconfirm --clean installer/BrahmaEvo_Setup.spec
       - uses: actions/upload-artifact@v4
         with:
-          name: Brahma-evo-enhanced-version
+          name: Brahma-Evo-Windows-Setup
           path: Brahma-Ai-Evo-main/dist/Brahma-evo-enhanced-version.exe
           if-no-files-found: error
+      - name: Publish GitHub Release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Brahma-Ai-Evo-main/dist/Brahma-evo-enhanced-version.exe
+          fail_on_unmatched_files: true
