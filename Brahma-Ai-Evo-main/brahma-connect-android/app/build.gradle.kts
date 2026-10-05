@@ -19,8 +19,24 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "edition"
+    productFlavors {
+        create("companion") {
+            dimension = "edition"
+            buildConfigField("boolean", "IS_STANDALONE", "false")
+        }
+        create("mobile") {
+            dimension = "edition"
+            applicationId = "com.brahma.evo.mobile"
+            versionCode = 1
+            versionName = "1.0.0"
+            buildConfigField("boolean", "IS_STANDALONE", "true")
+        }
+    }
+
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {

@@ -27,18 +27,24 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - name: Build installable debug APK
-        run: bash gradlew --no-daemon --stacktrace assembleDebug
-      - name: Name APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/Brahma-Evo-V3.apk
+      - name: Build companion and standalone APKs
+        run: bash gradlew --no-daemon --stacktrace :app:assembleCompanionDebug :app:assembleMobileDebug
+      - name: Name APKs
+        run: |
+          cp app/build/outputs/apk/companion/debug/app-companion-debug.apk app/build/outputs/apk/companion/debug/Brahma-Evo-V3.apk
+          cp app/build/outputs/apk/mobile/debug/app-mobile-debug.apk app/build/outputs/apk/mobile/debug/Brahma-Evo-Mobile.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Brahma-Evo-V3-APK
-          path: Brahma-Ai-Evo-main/brahma-connect-android/app/build/outputs/apk/debug/Brahma-Evo-V3.apk
+          name: Brahma-Evo-Android-APKs
+          path: |
+            Brahma-Ai-Evo-main/brahma-connect-android/app/build/outputs/apk/companion/debug/Brahma-Evo-V3.apk
+            Brahma-Ai-Evo-main/brahma-connect-android/app/build/outputs/apk/mobile/debug/Brahma-Evo-Mobile.apk
           if-no-files-found: error
       - name: Publish GitHub Release APK
         if: startsWith(github.ref, 'refs/tags/android-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: Brahma-Ai-Evo-main/brahma-connect-android/app/build/outputs/apk/debug/Brahma-Evo-V3.apk
+          files: |
+            Brahma-Ai-Evo-main/brahma-connect-android/app/build/outputs/apk/companion/debug/Brahma-Evo-V3.apk
+            Brahma-Ai-Evo-main/brahma-connect-android/app/build/outputs/apk/mobile/debug/Brahma-Evo-Mobile.apk
           fail_on_unmatched_files: true

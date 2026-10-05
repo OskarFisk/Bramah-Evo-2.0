@@ -12,10 +12,10 @@ import androidx.core.content.ContextCompat
 import com.brahma.connect.core.AgentStateStore
 import com.brahma.connect.pairing.PairingStorage
 import com.brahma.connect.ui.BrahmaConnectApp
+import com.brahma.connect.ui.BrahmaMobileApp
 import com.brahma.connect.ui.theme.BrahmaConnectTheme
 
 class MainActivity : ComponentActivity() {
-    private lateinit var storage: PairingStorage
     private var pendingServiceStart = false
 
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
@@ -37,30 +37,36 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        storage = PairingStorage(this)
-        AgentStateStore.setCredential(storage.loadCredential())
-        storage.loadGatewayHint()?.let {
-            AgentStateStore.setPairingOffer(it)
-            AgentStateStore.setGateway(
-                com.brahma.connect.core.GatewayEndpoint(
-                    name = "Brahma PC",
-                    host = it.host,
-                    port = it.port,
+        if (!BuildConfig.IS_STANDALONE) {
+            val storage = PairingStorage(this)
+            AgentStateStore.setCredential(storage.loadCredential())
+            storage.loadGatewayHint()?.let {
+                AgentStateStore.setPairingOffer(it)
+                AgentStateStore.setGateway(
+                    com.brahma.connect.core.GatewayEndpoint(
+                        name = "Brahma PC",
+                        host = it.host,
+                        port = it.port,
+                    )
                 )
-            )
+            }
+            maybeStartService()
         }
-        maybeStartService()
         setContent {
             BrahmaConnectTheme {
-                BrahmaConnectApp(
-                    onRequestCameraPermission = {
-                        cameraPermission.launch(Manifest.permission.CAMERA)
-                    },
-                    onRequestNotificationPermission = {
-                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    },
-                    onStartService = { maybeStartService() },
-                )
+                if (BuildConfig.IS_STANDALONE) {
+                    BrahmaMobileApp()
+                } else {
+                    BrahmaConnectApp(
+                        onRequestCameraPermission = {
+                            cameraPermission.launch(Manifest.permission.CAMERA)
+                        },
+                        onRequestNotificationPermission = {
+                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        },
+                        onStartService = { maybeStartService() },
+                    )
+                }
             }
         }
     }

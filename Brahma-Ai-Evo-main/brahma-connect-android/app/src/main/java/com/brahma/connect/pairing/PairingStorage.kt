@@ -51,6 +51,14 @@ class PairingStorage(context: Context) {
         prefs.edit().remove("device_credential").apply()
     }
 
+    fun saveGeminiApiKey(apiKey: String) {
+        prefs.edit().putString("mobile_gemini_api_key", apiKey.trim()).apply()
+    }
+
+    fun loadGeminiApiKey(): String? {
+        return prefs.getString("mobile_gemini_api_key", null)
+    }
+
     fun saveGatewayHint(offer: PairingOffer) {
         prefs.edit()
             .putString("last_pairing_offer", offer.toJson().toString())

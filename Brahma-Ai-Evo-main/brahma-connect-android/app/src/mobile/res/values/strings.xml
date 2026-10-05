@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Brahma Evo Mobile</string>
+    <string name="accessibility_service_description">Brahma Evo Mobile Android accessibility bridge.</string>
+</resources>

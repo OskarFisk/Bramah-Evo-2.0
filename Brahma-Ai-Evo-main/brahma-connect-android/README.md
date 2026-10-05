@@ -19,11 +19,12 @@ Build requirements:
 - JDK 17
 - Android SDK 35
 
-Build an installable debug APK from this directory:
+Build either installable debug APK from this directory:
 ```bash
-bash gradlew assembleDebug
+bash gradlew :app:assembleCompanionDebug
+bash gradlew :app:assembleMobileDebug
 ```
-The APK is created at `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions publishes the same installable build as `Brahma-Evo-V3.apk` under the `Brahma-Evo-V3-APK` artifact. Pushing a tag such as `android-v3.0.0` also attaches the APK to a GitHub Release.
+The companion edition pairs with the desktop gateway. The standalone mobile edition talks directly to Gemini, stores the user-provided API key encrypted on device, and exposes supported Android phone actions. GitHub Actions publishes both APKs in the `Brahma-Evo-Android-APKs` artifact and attaches them to releases for `android-v*` tags.
 
 Phase scope:
 - Gateway discovery
