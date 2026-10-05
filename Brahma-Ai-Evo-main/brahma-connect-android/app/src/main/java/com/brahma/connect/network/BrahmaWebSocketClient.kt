@@ -109,7 +109,7 @@ class BrahmaWebSocketClient(
             deviceId = credential?.deviceId,
             deviceName = credential?.deviceName ?: android.os.Build.MODEL ?: "Android",
             androidVersion = android.os.Build.VERSION.RELEASE ?: "Unknown",
-            agentVersion = "1.0.0",
+            agentVersion = "3.0.0",
             batteryPercentage = percentage,
             charging = charging,
             wifiEnabled = true,

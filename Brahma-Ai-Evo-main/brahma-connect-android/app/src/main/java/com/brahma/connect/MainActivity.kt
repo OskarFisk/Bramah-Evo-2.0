@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
             }
         } else {
             pendingServiceStart = false
-            AgentStateStore.setError("Notification permission is required for Brahma Connect.")
+            AgentStateStore.setError("Notification permission is required to keep Brahma-Evo-V3 connected.")
             AgentStateStore.setStatus("Notification permission denied")
         }
     }
@@ -50,7 +50,6 @@ class MainActivity : ComponentActivity() {
             )
         }
         maybeStartService()
-        ensureCameraPermission()
         setContent {
             BrahmaConnectTheme {
                 BrahmaConnectApp(
@@ -77,12 +76,6 @@ class MainActivity : ComponentActivity() {
                 return
             }
             startGatewayService()
-        }
-    }
-
-    private fun ensureCameraPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            cameraPermission.launch(Manifest.permission.CAMERA)
         }
     }
 

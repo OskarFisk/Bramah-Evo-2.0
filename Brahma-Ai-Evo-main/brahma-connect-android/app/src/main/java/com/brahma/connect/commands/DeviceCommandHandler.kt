@@ -49,7 +49,7 @@ class DeviceCommandHandler(private val context: Context) {
                 "device_name" to (Build.MODEL ?: "Android"),
                 "platform" to "android",
                 "android_version" to (Build.VERSION.RELEASE ?: "Unknown"),
-                "agent_version" to "1.0.0",
+                "agent_version" to "3.0.0",
                 "model" to (Build.MODEL ?: "Android"),
                 "battery" to battery.first,
                 "charging" to battery.second,

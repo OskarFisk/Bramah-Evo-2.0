@@ -15,14 +15,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -52,6 +55,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.brahma.connect.BrahmaConnectForegroundService
 import com.brahma.connect.core.AgentStateStore
 import com.brahma.connect.core.ConnectionState
@@ -123,12 +128,21 @@ fun BrahmaConnectApp(
     var manualHost by rememberSaveable { mutableStateOf("") }
     var manualPort by rememberSaveable { mutableStateOf("8765") }
     var scanError by rememberSaveable { mutableStateOf<String?>(null) }
+    var permissionRefresh by remember { mutableStateOf(0) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) permissionRefresh++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     DisposableEffect(Unit) {
         onDispose { discovery.stop() }
     }
 
-    val cameraGranted = remember { ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+    val cameraGranted = remember(permissionRefresh) { ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED }
     val notificationsGranted = remember { Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED }
     
     val setupMissing = listOfNotNull(
@@ -139,11 +153,7 @@ fun BrahmaConnectApp(
     val navController = rememberNavController()
 
     // Determine start destination
-    val startDest = when {
-        setupMissing.isNotEmpty() -> "permissions"
-        credential != null -> "home"
-        else -> "welcome"
-    }
+    val startDest = if (credential != null) "home" else "welcome"
 
     LaunchedEffect(credential) {
         if (credential != null && navController.currentDestination?.route != "home" && navController.currentDestination?.route != "connected_anim") {
@@ -161,7 +171,7 @@ fun BrahmaConnectApp(
         NavHost(
             navController = navController, 
             startDestination = startDest,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
             enterTransition = { fadeIn(tween(500)) },
             exitTransition = { fadeOut(tween(500)) }
         ) {
@@ -217,8 +227,8 @@ fun BrahmaConnectApp(
                 } else {
                     ConnectChoiceScreen(
                         onScanQr = { 
-                            if (!cameraGranted) onRequestCameraPermission()
-                            navController.navigate("scanner") 
+                            if (cameraGranted) navController.navigate("scanner")
+                            else onRequestCameraPermission()
                         },
                         onEnterIp = { showManual = true },
                         onFindLocal = {
@@ -324,8 +334,8 @@ fun GlassCard(content: @Composable () -> Unit) {
 fun WelcomeScreen(onNext: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Text("BRAHMA", style = MaterialTheme.typography.displayLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
-        Text("CONNECT", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Light, color = androidx.compose.ui.graphics.Color.White)
-        Spacer(modifier = Modifier.height(60.dp))
+        Text("EVOLUTION 3", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Light, color = androidx.compose.ui.graphics.Color.White)
+        Spacer(modifier = Modifier.height(40.dp))
         GlassCard {
             Text("Welcome to the neural bridge.", style = MaterialTheme.typography.bodyLarge, color = androidx.compose.ui.graphics.Color.White)
             Spacer(modifier = Modifier.height(24.dp))
@@ -448,7 +458,7 @@ private fun DiscoveryScreen(
         modifier = Modifier.fillMaxSize().padding(24.dp).background(androidx.compose.ui.graphics.Color.Transparent).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("BRAHMA CONNECT", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = androidx.compose.ui.graphics.Color.White)
+        Text("BRAHMA EVO V3", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = androidx.compose.ui.graphics.Color.White)
         Spacer(Modifier.height(8.dp))
         Text("Connect this device to Brahma AI.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(24.dp))
@@ -520,20 +530,29 @@ private fun ConnectedScreen(
     onOpenPermissions: () -> Unit,
     onOpenChat: () -> Unit,
 ) {
+    val connectionLabel = when (state) {
+        ConnectionState.CONNECTED -> "Connected"
+        ConnectionState.CONNECTING -> "Connecting"
+        ConnectionState.RECONNECTING -> "Reconnecting"
+        ConnectionState.DISCONNECTED -> "Offline"
+    }
+    val connectionColor = if (state == ConnectionState.CONNECTED) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp).background(androidx.compose.ui.graphics.Color.Transparent).verticalScroll(rememberScrollState()),
     ) {
-        Text("BRAHMA CONNECT", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, color = androidx.compose.ui.graphics.Color.White)
+        Text("BRAHMA EVO V3", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, color = androidx.compose.ui.graphics.Color.White)
         Spacer(Modifier.height(8.dp))
-        Text("● Connected", color = MaterialTheme.colorScheme.primary)
+        Text("● $connectionLabel", color = connectionColor)
         Spacer(Modifier.height(20.dp))
         Card(colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f), contentColor = androidx.compose.ui.graphics.Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))) {
             Column(Modifier.padding(16.dp)) {
                 Text(gateway?.name ?: "Brahma PC", fontWeight = FontWeight.Bold)
                 Text(credential.deviceName)
-                Text("Battery status is reported by the agent.")
-                Text("Network: Wi-Fi")
-                Text("State: $state")
+                gateway?.let { Text("${it.host}:${it.port}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 Text(status)
             }
         }
@@ -638,7 +657,7 @@ private fun QrScannerScreen(
             Spacer(Modifier.size(48.dp))
         }
         Spacer(Modifier.height(16.dp))
-        Card(modifier = Modifier.fillMaxWidth().height(420.dp), shape = RoundedCornerShape(20.dp)) {
+        Card(modifier = Modifier.fillMaxWidth().weight(1f), shape = RoundedCornerShape(20.dp)) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { viewContext ->
