@@ -20,6 +20,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     defaults:
       run:
         working-directory: Brahma-Ai-Evo-main/brahma-connect-android
@@ -30,9 +33,9 @@ jobs:
           distribution: temurin
           java-version: "17"
       - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
       - name: Build companion and standalone APKs
         run: bash gradlew --no-daemon --stacktrace :app:assembleCompanionDebug :app:assembleMobileDebug
       - name: Name APKs
