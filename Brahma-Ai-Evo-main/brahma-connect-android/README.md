@@ -28,4 +28,4 @@ Run the local pairing-payload tests with:
 bash gradlew --no-daemon :app:testCompanionDebugUnitTest
 ```
 
-GitHub Actions publishes both APKs in the `Brahma-Evo-Android-APKs` artifact and attaches them to releases for `android-v*` tags. Pairing QR codes must contain a valid, unexpired `_BRAHMA._tcp.local.` offer. Manual gateway addresses accept a hostname or IP address and a port from 1 to 65535.
+GitHub Actions publishes both APKs in the `Brahma-Evo-Android-APKs` artifact and attaches them to releases for `v*` or legacy `android-v*` tags. Pairing QR codes must contain a valid, unexpired `_BRAHMA._tcp.local.` offer. Manual gateway addresses accept a hostname or IP address and a port from 1 to 65535.
