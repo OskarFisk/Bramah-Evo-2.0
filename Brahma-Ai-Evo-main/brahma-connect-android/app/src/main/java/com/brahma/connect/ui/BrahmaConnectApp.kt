@@ -127,6 +127,7 @@ fun BrahmaConnectApp(
     var showManual by rememberSaveable { mutableStateOf(false) }
     var manualHost by rememberSaveable { mutableStateOf("") }
     var manualPort by rememberSaveable { mutableStateOf("8765") }
+    var manualError by rememberSaveable { mutableStateOf<String?>(null) }
     var scanError by rememberSaveable { mutableStateOf<String?>(null) }
     var permissionRefresh by remember { mutableStateOf(0) }
 
@@ -213,15 +214,33 @@ fun BrahmaConnectApp(
                 } else if (showManual) {
                     ManualConnectDialog(
                         host = manualHost, port = manualPort,
-                        onHostChange = { manualHost = it }, onPortChange = { manualPort = it },
-                        onDismiss = { showManual = false },
+                        error = manualError,
+                        onHostChange = { manualHost = it; manualError = null },
+                        onPortChange = { manualPort = it; manualError = null },
+                        onDismiss = { showManual = false; manualError = null },
                         onConnect = {
-                            val p = manualPort.toIntOrNull() ?: 8765
-                            AgentStateStore.setGateway(GatewayEndpoint(name = "Brahma PC", host = manualHost.trim(), port = p))
-                            AgentStateStore.setStatus("Manual endpoint selected")
-                            onStartService()
-                            showManual = false
-                            navController.navigate("connected_anim")
+                            val endpoint = manualPort.toIntOrNull()?.let { port ->
+                                runCatching {
+                                    okhttp3.HttpUrl.Builder()
+                                        .scheme("http")
+                                        .host(manualHost.trim())
+                                        .port(port)
+                                        .addPathSegment("ws")
+                                        .build()
+                                }.getOrNull()
+                            }
+                            if (endpoint == null) {
+                                manualError = "Enter a valid host and a port from 1 to 65535."
+                            } else {
+                                AgentStateStore.setGateway(
+                                    GatewayEndpoint(name = "Brahma PC", host = endpoint.host, port = endpoint.port),
+                                )
+                                AgentStateStore.setStatus("Manual endpoint selected")
+                                onStartService()
+                                showManual = false
+                                manualError = null
+                                navController.navigate("connected_anim")
+                            }
                         }
                     )
                 } else {
@@ -611,6 +630,7 @@ private fun ConnectedScreen(
 private fun ManualConnectDialog(
     host: String,
     port: String,
+    error: String?,
     onHostChange: (String) -> Unit,
     onPortChange: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -624,6 +644,10 @@ private fun ManualConnectDialog(
                 OutlinedTextField(value = host, onValueChange = onHostChange, label = { Text("Host") }, singleLine = true)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = port, onValueChange = onPortChange, label = { Text("Port") }, singleLine = true)
+                error?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
             }
         },
         confirmButton = { TextButton(onClick = onConnect) { Text("Connect") } },

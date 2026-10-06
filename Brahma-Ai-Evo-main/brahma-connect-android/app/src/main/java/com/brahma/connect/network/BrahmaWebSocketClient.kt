@@ -2,8 +2,10 @@ package com.brahma.connect.network
 
 import android.content.Context
 import android.os.SystemClock
+import com.brahma.connect.BuildConfig
 import com.brahma.connect.commands.DeviceCommandHandler
 import com.brahma.connect.core.AgentStateStore
+import com.brahma.connect.core.BrahmaConnectCapabilities
 import com.brahma.connect.core.BrahmaProtocol
 import com.brahma.connect.core.ChatMessage
 import com.brahma.connect.core.ConnectionState
@@ -58,8 +60,11 @@ class BrahmaWebSocketClient(
         AgentStateStore.setStatus("Connecting to ${endpoint.name}")
 
         socket?.close(1000, "Reconnecting")
+        val host = endpoint.host.let {
+            if (it.contains(':') && !it.startsWith("[")) "[$it]" else it
+        }
         socket = client.newWebSocket(
-            Request.Builder().url("ws://${endpoint.host}:${endpoint.port}/ws").build(),
+            Request.Builder().url("ws://$host:${endpoint.port}/ws").build(),
             BrahmaSocketListener(),
         )
     }
@@ -109,21 +114,11 @@ class BrahmaWebSocketClient(
             deviceId = credential?.deviceId,
             deviceName = credential?.deviceName ?: android.os.Build.MODEL ?: "Android",
             androidVersion = android.os.Build.VERSION.RELEASE ?: "Unknown",
-            agentVersion = "3.0.0",
+            agentVersion = BuildConfig.VERSION_NAME,
             batteryPercentage = percentage,
             charging = charging,
             wifiEnabled = true,
-            capabilities = listOf(
-                "device_info",
-                "battery",
-                "flashlight",
-                "volume",
-                "media",
-                "launch_app",
-                "apps",
-                "open_url",
-                "wifi_state",
-            ),
+            capabilities = BrahmaConnectCapabilities.INITIAL,
         )
     }
 

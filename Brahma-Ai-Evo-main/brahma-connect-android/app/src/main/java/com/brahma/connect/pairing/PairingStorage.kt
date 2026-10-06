@@ -2,6 +2,7 @@ package com.brahma.connect.pairing
 
 import android.content.Context
 import android.os.Build
+import com.brahma.connect.core.AiProvider
 import com.brahma.connect.core.DeviceCredential
 import com.brahma.connect.core.PairingOffer
 import org.json.JSONObject
@@ -51,12 +52,36 @@ class PairingStorage(context: Context) {
         prefs.edit().remove("device_credential").apply()
     }
 
-    fun saveGeminiApiKey(apiKey: String) {
-        prefs.edit().putString("mobile_gemini_api_key", apiKey.trim()).apply()
+    fun saveAiProviderConfig(provider: AiProvider, model: String, apiKey: String) {
+        prefs.edit()
+            .putString("mobile_ai_provider", provider.name)
+            .putString("mobile_ai_model_${provider.name}", model.trim())
+            .putString("mobile_ai_key_${provider.name}", apiKey.trim())
+            .apply()
     }
 
-    fun loadGeminiApiKey(): String? {
-        return prefs.getString("mobile_gemini_api_key", null)
+    fun loadAiProvider(): AiProvider {
+        val savedProvider = prefs.getString("mobile_ai_provider", null)
+        return runCatching { AiProvider.valueOf(savedProvider.orEmpty()) }
+            .getOrDefault(AiProvider.GEMINI)
+    }
+
+    fun loadAiModel(provider: AiProvider): String {
+        return prefs.getString("mobile_ai_model_${provider.name}", null)
+            ?.takeIf(String::isNotBlank)
+            ?: provider.defaultModel
+    }
+
+    fun loadAiApiKey(provider: AiProvider): String? {
+        val key = prefs.getString("mobile_ai_key_${provider.name}", null)
+        if (!key.isNullOrBlank()) return key
+        return if (provider == AiProvider.GEMINI) prefs.getString("mobile_gemini_api_key", null) else null
+    }
+
+    fun clearAiApiKey(provider: AiProvider) {
+        val editor = prefs.edit().remove("mobile_ai_key_${provider.name}")
+        if (provider == AiProvider.GEMINI) editor.remove("mobile_gemini_api_key")
+        editor.apply()
     }
 
     fun saveGatewayHint(offer: PairingOffer) {

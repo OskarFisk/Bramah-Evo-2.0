@@ -80,5 +80,12 @@ object BrahmaConnectCapabilities {
         "apps",
         "open_url",
         "wifi_state",
+        "sharing",
+        "messaging",
+        "email",
+        "maps",
+        "calendar",
+        "alarms",
+        "settings",
     )
 }

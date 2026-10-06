@@ -27,9 +27,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -55,7 +58,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.brahma.connect.commands.DeviceCommandHandler
-import com.brahma.connect.network.DirectGeminiClient
+import com.brahma.connect.core.AiProvider
+import com.brahma.connect.core.AiProviderConfig
+import com.brahma.connect.network.MobileAiClient
 import com.brahma.connect.pairing.PairingStorage
 import kotlinx.coroutines.launch
 
@@ -68,28 +73,40 @@ fun BrahmaMobileApp() {
     val storage = remember { PairingStorage(context.applicationContext) }
     val commandHandler = remember { DeviceCommandHandler(context.applicationContext) }
     val coroutineScope = rememberCoroutineScope()
-    var apiKey by remember { mutableStateOf(storage.loadGeminiApiKey().orEmpty()) }
-    var apiKeyDraft by rememberSaveable { mutableStateOf(apiKey) }
-    var showSettings by rememberSaveable { mutableStateOf(apiKey.isBlank()) }
+    var selectedProviderName by rememberSaveable { mutableStateOf(storage.loadAiProvider().name) }
+    val selectedProvider = remember(selectedProviderName) { AiProvider.valueOf(selectedProviderName) }
+    var apiKey by remember(selectedProvider) { mutableStateOf(storage.loadAiApiKey(selectedProvider).orEmpty()) }
+    var model by remember(selectedProvider) { mutableStateOf(storage.loadAiModel(selectedProvider)) }
+    var showSettings by rememberSaveable {
+        mutableStateOf(storage.loadAiApiKey(storage.loadAiProvider()).isNullOrBlank())
+    }
     var input by rememberSaveable { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
     val messages = remember {
         mutableStateListOf(MobileChatMessage(
             role = "model",
-            text = "I'm Brahma, running directly on this phone. Ask me a question or ask me to check the battery, adjust media volume, open an app, or visit a web address.",
+            text = "I'm Brahma, running directly on this phone. I can answer questions, control supported phone settings, open apps and maps, and prepare messages, email, calendar events, or alarms for you to review.",
         ))
     }
 
     if (showSettings) {
         MobileSettingsScreen(
-            apiKey = apiKeyDraft,
+            provider = selectedProvider,
+            apiKey = apiKey,
+            model = model,
             hasSavedKey = apiKey.isNotBlank(),
-            onApiKeyChange = { apiKeyDraft = it },
+            onProviderChange = { selectedProviderName = it.name },
+            onApiKeyChange = { apiKey = it },
+            onModelChange = { model = it },
             onSave = {
-                storage.saveGeminiApiKey(apiKeyDraft)
-                apiKey = apiKeyDraft.trim()
-                apiKeyDraft = apiKey
+                storage.saveAiProviderConfig(selectedProvider, model, apiKey)
+                apiKey = apiKey.trim()
+                model = model.trim()
                 showSettings = false
+            },
+            onRemoveKey = {
+                storage.clearAiApiKey(selectedProvider)
+                apiKey = ""
             },
             onBack = { showSettings = false },
         )
@@ -104,8 +121,12 @@ fun BrahmaMobileApp() {
         isSending = true
         coroutineScope.launch {
             try {
-                val history = messages.map { it.role to it.text }
-                val answer = DirectGeminiClient.reply(apiKey, history, commandHandler)
+                val history = messages.drop(1).takeLast(MAX_CONTEXT_MESSAGES).map { it.role to it.text }
+                val answer = MobileAiClient.reply(
+                    AiProviderConfig(selectedProvider, model, apiKey),
+                    history,
+                    commandHandler,
+                )
                 messages.add(MobileChatMessage("model", answer))
             } catch (error: Exception) {
                 messages.add(MobileChatMessage("model", error.message ?: "Brahma couldn't complete that request."))
@@ -127,7 +148,6 @@ fun BrahmaMobileApp() {
                 },
                 actions = {
                     IconButton(onClick = {
-                        apiKeyDraft = apiKey
                         showSettings = true
                     }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -186,15 +206,23 @@ fun BrahmaMobileApp() {
     }
 }
 
+private const val MAX_CONTEXT_MESSAGES = 20
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MobileSettingsScreen(
+    provider: AiProvider,
     apiKey: String,
+    model: String,
     hasSavedKey: Boolean,
+    onProviderChange: (AiProvider) -> Unit,
     onApiKeyChange: (String) -> Unit,
+    onModelChange: (String) -> Unit,
     onSave: () -> Unit,
+    onRemoveKey: () -> Unit,
     onBack: () -> Unit,
 ) {
+    var providerMenuExpanded by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -211,24 +239,70 @@ private fun MobileSettingsScreen(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Text("Brahma, without the desktop", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Choose an AI provider", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
-                "Connect directly to Gemini and use supported Android phone actions. Your API key is encrypted on this device; prompts are sent to Google Gemini.",
+                "Provider API keys are encrypted on this device. Prompts are sent directly to the provider you select.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyLarge,
+            )
+            ExposedDropdownMenuBox(
+                expanded = providerMenuExpanded,
+                onExpandedChange = { providerMenuExpanded = it },
+            ) {
+                OutlinedTextField(
+                    value = provider.title,
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    label = { Text("Provider") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = providerMenuExpanded) },
+                )
+                ExposedDropdownMenu(
+                    expanded = providerMenuExpanded,
+                    onDismissRequest = { providerMenuExpanded = false },
+                ) {
+                    AiProvider.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.title) },
+                            onClick = {
+                                onProviderChange(option)
+                                providerMenuExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = model,
+                onValueChange = onModelChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Model ID") },
+                supportingText = { Text("Default: ${provider.defaultModel}. You can enter another model supported by this provider.") },
+                singleLine = true,
             )
             OutlinedTextField(
                 value = apiKey,
                 onValueChange = onApiKeyChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Gemini API key") },
+                label = { Text(provider.keyLabel) },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
             )
-            Button(onClick = onSave, enabled = apiKey.isNotBlank(), modifier = Modifier.fillMaxWidth().height(52.dp)) {
+            Button(
+                onClick = onSave,
+                enabled = apiKey.isNotBlank() && model.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
                 Text("Save and start")
             }
-            Text("Phone tools: battery, device info, media volume, opening installed apps, and web links.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (hasSavedKey) {
+                TextButton(onClick = onRemoveKey) { Text("Remove this provider's saved key") }
+            }
+            Text(
+                "Providers: ${AiProvider.entries.joinToString { it.title }}. " +
+                    "Phone skills include device info, battery, flashlight, volume, apps, maps, sharing, drafts, calendar, alarms, and settings.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
