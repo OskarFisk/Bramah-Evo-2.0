@@ -8,9 +8,14 @@ on:
       - ".github/workflows/build-android.yml"
     tags:
       - "android-v*"
+      - "v*"
 
 permissions:
   contents: write
+
+concurrency:
+  group: brahma-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -41,7 +46,7 @@ jobs:
             Brahma-Ai-Evo-main/brahma-connect-android/app/build/outputs/apk/mobile/debug/Brahma-Evo-Mobile.apk
           if-no-files-found: error
       - name: Publish GitHub Release APK
-        if: startsWith(github.ref, 'refs/tags/android-v')
+        if: startsWith(github.ref, 'refs/tags/android-v') || startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |

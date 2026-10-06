@@ -5,6 +5,30 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 object AgentStateStore {
+    private val _visualTheme = MutableStateFlow(VisualTheme.CYBER_CYAN)
+    val visualTheme: StateFlow<VisualTheme> = _visualTheme.asStateFlow()
+
+    private val _startupEffect = MutableStateFlow(StartupEffect.ORBITAL_IGNITION)
+    val startupEffect: StateFlow<StartupEffect> = _startupEffect.asStateFlow()
+
+    private val _voicePreset = MutableStateFlow(VoicePreset.STUDIO)
+    val voicePreset: StateFlow<VoicePreset> = _voicePreset.asStateFlow()
+
+    private val _speakReplies = MutableStateFlow(false)
+    val speakReplies: StateFlow<Boolean> = _speakReplies.asStateFlow()
+
+    fun setExperiencePreferences(
+        theme: VisualTheme,
+        effect: StartupEffect,
+        voice: VoicePreset,
+        speakReplies: Boolean = _speakReplies.value,
+    ) {
+        _visualTheme.value = theme
+        _startupEffect.value = effect
+        _voicePreset.value = voice
+        _speakReplies.value = speakReplies
+    }
+
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
@@ -87,5 +111,21 @@ object BrahmaConnectCapabilities {
         "calendar",
         "alarms",
         "settings",
+        "list_apps",
+        "share_text",
+        "compose_sms",
+        "compose_email",
+        "open_map",
+        "create_calendar_event",
+        "set_alarm",
+        "open_settings",
+        "file_list",
+        "file_read",
+        "file_write",
+        "file_delete",
+        "ui_dump",
+        "ui_tap",
+        "ui_swipe",
+        "ui_type",
     )
 }

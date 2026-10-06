@@ -430,9 +430,13 @@ def _speak_edge_native(text: str, force_edge: bool = False) -> None:
             try:
                 from memory import config_manager
                 voice = config_manager.get_setting("speech_voice", "en-US-GuyNeural")
+                speech_preset = config_manager.get_setting("speech_preset", "STUDIO")
             except Exception:
                 voice = "en-US-GuyNeural"
-            communicator = edge_tts.Communicate(text, voice=voice)
+                speech_preset = "STUDIO"
+            from core.speech_presets import edge_tts_style
+            rate, pitch = edge_tts_style(speech_preset)
+            communicator = edge_tts.Communicate(text, voice=voice, rate=rate, pitch=pitch)
             communicator.save_sync(audio_path)
         except Exception as exc:
             print(f"[AttentionMonitor] Edge TTS generation failed: {exc}. Falling back to offline male voice.")

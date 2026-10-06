@@ -5,6 +5,9 @@ import android.os.Build
 import com.brahma.connect.core.AiProvider
 import com.brahma.connect.core.DeviceCredential
 import com.brahma.connect.core.PairingOffer
+import com.brahma.connect.core.StartupEffect
+import com.brahma.connect.core.VisualTheme
+import com.brahma.connect.core.VoicePreset
 import org.json.JSONObject
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -50,6 +53,32 @@ class PairingStorage(context: Context) {
 
     fun clearCredential() {
         prefs.edit().remove("device_credential").apply()
+    }
+
+    fun loadVisualTheme(): VisualTheme = prefs.getString("visual_theme", null)
+        ?.let { value -> runCatching { VisualTheme.valueOf(value) }.getOrNull() }
+        ?: VisualTheme.CYBER_CYAN
+
+    fun loadStartupEffect(): StartupEffect = prefs.getString("startup_effect", null)
+        ?.let { value -> runCatching { StartupEffect.valueOf(value) }.getOrNull() }
+        ?: StartupEffect.ORBITAL_IGNITION
+
+    fun loadVoicePreset(): VoicePreset = prefs.getString("voice_preset", null)
+        ?.let { value -> runCatching { VoicePreset.valueOf(value) }.getOrNull() }
+        ?: VoicePreset.STUDIO
+
+    fun saveExperiencePreferences(theme: VisualTheme, effect: StartupEffect, voice: VoicePreset) {
+        prefs.edit()
+            .putString("visual_theme", theme.name)
+            .putString("startup_effect", effect.name)
+            .putString("voice_preset", voice.name)
+            .apply()
+    }
+
+    fun loadSpeakReplies(): Boolean = prefs.getBoolean("speak_replies", false)
+
+    fun saveSpeakReplies(enabled: Boolean) {
+        prefs.edit().putBoolean("speak_replies", enabled).apply()
     }
 
     fun saveAiProviderConfig(provider: AiProvider, model: String, apiKey: String) {

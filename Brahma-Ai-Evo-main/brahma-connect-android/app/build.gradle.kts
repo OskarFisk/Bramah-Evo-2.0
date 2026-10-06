@@ -13,8 +13,8 @@ android {
         applicationId = "com.brahma.connect"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "3.1.0"
+        versionCode = 5
+        versionName = "3.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -28,8 +28,8 @@ android {
         create("mobile") {
             dimension = "edition"
             applicationId = "com.brahma.evo.mobile"
-            versionCode = 2
-            versionName = "1.1.0"
+            versionCode = 3
+            versionName = "1.2.0"
             buildConfigField("boolean", "IS_STANDALONE", "true")
         }
     }

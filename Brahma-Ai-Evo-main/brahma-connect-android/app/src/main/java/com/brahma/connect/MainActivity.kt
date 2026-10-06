@@ -37,8 +37,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val storage = PairingStorage(this)
+        AgentStateStore.setExperiencePreferences(
+            storage.loadVisualTheme(),
+            storage.loadStartupEffect(),
+            storage.loadVoicePreset(),
+            storage.loadSpeakReplies(),
+        )
         if (!BuildConfig.IS_STANDALONE) {
-            val storage = PairingStorage(this)
             AgentStateStore.setCredential(storage.loadCredential())
             storage.loadGatewayHint()?.let {
                 AgentStateStore.setPairingOffer(it)

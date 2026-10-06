@@ -44,6 +44,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -57,12 +58,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.Lifecycle.State
+import androidx.navigation.compose.currentBackStackEntryAsState
 import com.brahma.connect.BrahmaConnectForegroundService
 import com.brahma.connect.core.AgentStateStore
 import com.brahma.connect.core.ConnectionState
 import com.brahma.connect.core.DeviceCredential
 import com.brahma.connect.core.GatewayEndpoint
 import com.brahma.connect.core.PairingOffer
+import com.brahma.connect.core.VisualTheme
 import com.brahma.connect.network.BrahmaGatewayDiscovery
 import com.brahma.connect.pairing.PairingPayloadParser
 import com.brahma.connect.pairing.PairingStorage
@@ -89,20 +93,76 @@ import androidx.compose.material.icons.filled.Send
 
 
 @Composable
-fun HolographicBackground() {
-    AndroidView(
-        factory = { ctx ->
-            WebView(ctx).apply {
-                settings.javaScriptEnabled = true
-                settings.allowFileAccess = true
-                settings.allowContentAccess = true
-                settings.domStorageEnabled = true
-                webViewClient = WebViewClient()
-                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                loadUrl("file:///android_asset/web_background/index.html")
+fun HolographicBackground(isActive: Boolean = true) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentIsActive by rememberUpdatedState(isActive)
+    val visualTheme by AgentStateStore.visualTheme.collectAsState()
+    val webView = remember(context) {
+        WebView(context).apply {
+            settings.javaScriptEnabled = true
+            settings.allowFileAccess = true
+            settings.allowContentAccess = false
+            settings.domStorageEnabled = false
+            webViewClient = WebViewClient()
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            loadUrl("file:///android_asset/web_background/index.html")
+        }
+    }
+    DisposableEffect(webView, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    if (currentIsActive) {
+                        webView.onResume()
+                        webView.resumeTimers()
+                    }
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    webView.onPause()
+                    webView.pauseTimers()
+                }
+                else -> Unit
             }
-        },
-        modifier = Modifier.fillMaxSize()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (isActive && lifecycleOwner.lifecycle.currentState.isAtLeast(State.RESUMED)) {
+            webView.onResume()
+            webView.resumeTimers()
+        } else {
+            webView.onPause()
+            webView.pauseTimers()
+        }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            webView.stopLoading()
+            webView.loadUrl("about:blank")
+            webView.destroy()
+        }
+    }
+    LaunchedEffect(isActive) {
+        if (isActive && lifecycleOwner.lifecycle.currentState.isAtLeast(State.RESUMED)) {
+            webView.onResume()
+            webView.resumeTimers()
+        } else {
+            webView.onPause()
+            webView.pauseTimers()
+        }
+    }
+    LaunchedEffect(visualTheme) {
+        val state = when (visualTheme) {
+            VisualTheme.CYBER_CYAN -> "LISTENING"
+            VisualTheme.PLASMA_VIOLET -> "EXECUTING"
+            VisualTheme.SOLAR_AMBER -> "THINKING"
+            VisualTheme.MATRIX_GREEN -> "SCANNING"
+            VisualTheme.GLACIER_BLUE -> "WORKING"
+            VisualTheme.CRIMSON_CORE -> "MUTED"
+        }
+        webView.evaluateJavascript("window.setBrahmaState('$state')", null)
+    }
+    AndroidView(
+        factory = { webView },
+        modifier = Modifier.fillMaxSize(),
     )
 }
 
@@ -152,6 +212,7 @@ fun BrahmaConnectApp(
     )
 
     val navController = rememberNavController()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
 
     // Determine start destination
     val startDest = if (credential != null) "home" else "welcome"
@@ -166,7 +227,7 @@ fun BrahmaConnectApp(
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Render 3D Background
-        HolographicBackground()
+        HolographicBackground(isActive = currentBackStackEntry?.destination?.route != "connected_anim")
 
         // UI Overlay
         NavHost(
@@ -188,6 +249,9 @@ fun BrahmaConnectApp(
                         else navController.navigate("welcome") { popUpTo(0) }
                     }
                 )
+            }
+            composable("appearance") {
+                AppearancePreferencesScreen(onBack = { navController.popBackStack() })
             }
             composable("welcome") {
                 WelcomeScreen(
@@ -250,6 +314,7 @@ fun BrahmaConnectApp(
                             else onRequestCameraPermission()
                         },
                         onEnterIp = { showManual = true },
+                        onCustomize = { navController.navigate("appearance") },
                         onFindLocal = {
                             discovery.start(
                                 onFound = {
@@ -311,7 +376,8 @@ fun BrahmaConnectApp(
                             }
                             context.startActivity(intent)
                         },
-                        onOpenChat = { navController.navigate("chat") }
+                        onOpenChat = { navController.navigate("chat") },
+                        onOpenAppearance = { navController.navigate("appearance") },
                     )
                 }
             }
@@ -381,7 +447,12 @@ fun AboutScreen(onNext: () -> Unit) {
 }
 
 @Composable
-fun ConnectChoiceScreen(onScanQr: () -> Unit, onEnterIp: () -> Unit, onFindLocal: () -> Unit) {
+fun ConnectChoiceScreen(
+    onScanQr: () -> Unit,
+    onEnterIp: () -> Unit,
+    onFindLocal: () -> Unit,
+    onCustomize: () -> Unit = {},
+) {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         GlassCard {
             Text("Pair Device", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -391,6 +462,7 @@ fun ConnectChoiceScreen(onScanQr: () -> Unit, onEnterIp: () -> Unit, onFindLocal
             OutlinedButton(onClick = onFindLocal, modifier = Modifier.fillMaxWidth()) { Text("Auto Discover") }
             Spacer(modifier = Modifier.height(12.dp))
             TextButton(onClick = onEnterIp) { Text("Enter IP Manually", color = androidx.compose.ui.graphics.Color.White) }
+            TextButton(onClick = onCustomize) { Text("Themes, effects & voices") }
         }
     }
 }
@@ -401,13 +473,9 @@ fun ConnectedAnimatedScreen(onFinished: () -> Unit) {
         delay(2000)
         onFinished()
     }
-    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        GlassCard {
-            Text("Connection Established", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(16.dp))
-            androidx.compose.material3.CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-        }
-    }
+    val theme by AgentStateStore.visualTheme.collectAsState()
+    val effect by AgentStateStore.startupEffect.collectAsState()
+    BootSequenceScreen(theme, effect)
 }
 
 
@@ -548,6 +616,7 @@ private fun ConnectedScreen(
     onDisconnect: () -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenChat: () -> Unit,
+    onOpenAppearance: () -> Unit,
 ) {
     val connectionLabel = when (state) {
         ConnectionState.CONNECTED -> "Connected"
@@ -576,6 +645,10 @@ private fun ConnectedScreen(
             }
         }
         Spacer(Modifier.height(16.dp))
+        OutlinedButton(onClick = onOpenAppearance, modifier = Modifier.fillMaxWidth()) {
+            Text("Themes, effects & voices")
+        }
+        Spacer(Modifier.height(12.dp))
         
         Card(
             onClick = onOpenChat,

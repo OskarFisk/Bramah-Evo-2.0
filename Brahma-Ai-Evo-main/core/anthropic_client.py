@@ -10,6 +10,7 @@ from core.user_paths import get_user_data_dir
 
 
 API_CONFIG_PATH = get_user_data_dir() / "config" / "api_keys.json"
+SETTINGS_PATH = get_user_data_dir() / "config" / "app_settings.json"
 API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-sonnet-4-20250514"
 
@@ -23,9 +24,17 @@ def chat(prompt: str, system: str | None = None) -> str:
     api_key = str(data.get("anthropic_api_key", "")).strip()
     if not api_key:
         raise PermissionError("Anthropic API key is missing. Add one in Settings.")
+    model = MODEL
+    try:
+        settings = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+        overrides = settings.get("cloud_models", {})
+        if isinstance(overrides, dict):
+            model = str(overrides.get("Anthropic") or model)
+    except (OSError, json.JSONDecodeError):
+        pass
 
     payload = {
-        "model": MODEL,
+        "model": model,
         "max_tokens": 1024,
         "messages": [{"role": "user", "content": prompt}],
     }

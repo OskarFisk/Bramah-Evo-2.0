@@ -40,7 +40,7 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QMenu, QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSlider, QTextEdit,
     QGraphicsDropShadowEffect,
     QStyle, QSystemTrayIcon, QVBoxLayout, QWidget, QProgressBar,
-    QStackedWidget, QInputDialog, QMessageBox,
+    QStackedWidget, QInputDialog, QListWidget, QListWidgetItem, QMessageBox,
 )
 
 try:
@@ -62,14 +62,18 @@ from core.local_brain import local_brain
 from core.api_keys import (
     add_api_key,
     detect_provider,
+    get_active_key,
     get_provider_keys,
     mask_api_key,
     remove_api_key,
     set_active_key,
 )
+from core.ai_providers import OPENAI_COMPATIBLE_PROVIDERS
+from core.speech_presets import SPEECH_PRESETS
 from workspace_store import store as workspace_store
 from core.identity import identity
 from sound_manager import sound_mgr
+from core.desktop_skill_catalog import SKILLS, SKILL_CATEGORIES
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -96,6 +100,8 @@ _THEME_PRESETS = (
     ("Mint", "#80ed99"), ("Indigo", "#3a86ff"), ("Gold", "#ffb703"),
     ("Ice Cyan", "#00e5ff"), ("Porcelain", "#f4f6f8"), ("Crimson", "#e63946"),
     ("Seafoam", "#57cc99"), ("Neon Lime", "#ccff00"), ("Ultraviolet", "#6c5ce7"),
+    ("Cyber Cyan", "#00e5ff"), ("Plasma Violet", "#b388ff"), ("Solar Ember", "#ffab40"),
+    ("Matrix Green", "#69f0ae"), ("Glacier Blue", "#80d8ff"), ("Crimson Core", "#ff5252"),
 )
 
 _DEFAULT_W, _DEFAULT_H = 980, 700
@@ -104,6 +110,7 @@ _LEFT_W  = 160
 _RIGHT_W = 340
 
 _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
+APP_VERSION = "3.3.0"
 
 
 class C:
@@ -1500,6 +1507,8 @@ def _default_app_settings() -> dict:
         "launch_minimized": False,
         "check_updates_on_startup": True,
         "default_ai_provider": "Gemini",
+        "startup_effect": "ORBITAL_IGNITION",
+        "speech_preset": "STUDIO",
         "auto_provider_switch": True,
         "attention_message_prompts": True,
         "attention_call_prompts": True,
@@ -6727,6 +6736,7 @@ class CommandBar(QWidget):
     attach_clicked = pyqtSignal()
     mic_clicked = pyqtSignal()
     developer_clicked = pyqtSignal()
+    skills_clicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -6859,6 +6869,14 @@ class CommandBar(QWidget):
         dev.clicked.connect(self.developer_clicked.emit)
         lay.addWidget(dev)
 
+        skills = QPushButton("200")
+        skills.setFixedSize(40, 28)
+        skills.setCursor(Qt.CursorShape.PointingHandCursor)
+        skills.setToolTip("Browse the 200 assistant workflows")
+        skills.setStyleSheet(btn_style_ghost)
+        skills.clicked.connect(self.skills_clicked.emit)
+        lay.addWidget(skills)
+
         # Send button — golden accent
         send = QPushButton()
         send.setFixedSize(32, 32)
@@ -6908,6 +6926,9 @@ class CommandBar(QWidget):
         self.submitted.emit(txt)
         self.hide()
 
+    def set_input_text(self, text: str):
+        self._input.setText(text)
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             self.hide()
@@ -6919,6 +6940,86 @@ class CommandBar(QWidget):
 
     def set_state(self, state: str):
         pass
+
+
+class DesktopSkillLibraryDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Brahma Skill Library")
+        self.setMinimumSize(620, 560)
+        self.selected_skill = None
+
+        layout = QVBoxLayout(self)
+        title = QLabel(f"Assistant workflow library · {len(SKILLS)} skills")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        layout.addWidget(title)
+        note = QLabel(
+            "These workflows prepare prompts for Brahma. Direct actions still follow the "
+            "assistant's existing permissions and confirmation behavior."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(note)
+
+        filters = QHBoxLayout()
+        self._query = QLineEdit()
+        self._query.setPlaceholderText("Search skills")
+        self._category = QComboBox()
+        self._category.addItems(("All categories", *SKILL_CATEGORIES))
+        filters.addWidget(self._query, 1)
+        filters.addWidget(self._category)
+        layout.addLayout(filters)
+
+        self._list = QListWidget()
+        self._list.currentItemChanged.connect(self._show_selected_prompt)
+        self._list.itemDoubleClicked.connect(lambda _item: self._use_selected())
+        layout.addWidget(self._list, 1)
+        self._description = QLabel("Select a skill to preview its prompt.")
+        self._description.setWordWrap(True)
+        self._description.setMinimumHeight(72)
+        self._description.setStyleSheet(f"color: {C.TEXT_MED};")
+        layout.addWidget(self._description)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        self._use_button = QPushButton("Use Skill")
+        self._use_button.setEnabled(False)
+        self._use_button.clicked.connect(self._use_selected)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        buttons.addWidget(self._use_button)
+        layout.addLayout(buttons)
+
+        self._query.textChanged.connect(self._refresh)
+        self._category.currentIndexChanged.connect(self._refresh)
+        self._refresh()
+
+    def _refresh(self, *_):
+        query = self._query.text().strip().casefold()
+        category = self._category.currentText()
+        self._list.clear()
+        for skill in SKILLS:
+            if category != "All categories" and skill.category != category:
+                continue
+            if query and query not in f"{skill.title} {skill.category} {skill.prompt}".casefold():
+                continue
+            item = QListWidgetItem(f"{skill.title}  ·  {skill.category}")
+            item.setData(Qt.ItemDataRole.UserRole, skill)
+            self._list.addItem(item)
+        self._description.setText(f"{self._list.count()} matching workflows. Select one to preview.")
+        self._use_button.setEnabled(False)
+
+    def _show_selected_prompt(self, item, _previous=None):
+        skill = item.data(Qt.ItemDataRole.UserRole) if item else None
+        self._description.setText(skill.prompt if skill else "Select a skill to preview its prompt.")
+        self._use_button.setEnabled(skill is not None)
+
+    def _use_selected(self):
+        item = self._list.currentItem()
+        if item is not None:
+            self.selected_skill = item.data(Qt.ItemDataRole.UserRole)
+            self.accept()
 
 
 class DeveloperModeDialog(QDialog):
@@ -7446,8 +7547,9 @@ class ScanningOverlay(QWidget):
 class BootSequenceOverlay(QWidget):
     finished = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, effect: str = "ORBITAL_IGNITION"):
         super().__init__(parent)
+        self.set_effect(effect)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -7470,6 +7572,10 @@ class BootSequenceOverlay(QWidget):
 
         self._tmr = QTimer(self)
         self._tmr.timeout.connect(self._tick)
+
+    def set_effect(self, effect: str):
+        allowed = {"ORBITAL_IGNITION", "SINGULARITY", "NEURAL_PULSE", "QUANTUM_GATE"}
+        self._effect = effect if effect in allowed else "ORBITAL_IGNITION"
 
     def _init_particles(self, w: float, h: float):
         self._particles = []
@@ -7607,6 +7713,7 @@ class BootSequenceOverlay(QWidget):
             h = float(self.height())
             cx = w / 2.0
             cy = h / 2.0
+            accent = QColor(C.ACC)
 
             # DO NOT DRAW BACKGROUND FILL: Purely transparent!
 
@@ -7660,11 +7767,57 @@ class BootSequenceOverlay(QWidget):
                 if flash_alpha > 0:
                     grad = QRadialGradient(cx, cy - 30.0, flash_rad)
                     grad.setColorAt(0.0, QColor(255, 255, 255, flash_alpha))
-                    grad.setColorAt(0.3, QColor(0, 240, 255, int(flash_alpha * 0.7)))
-                    grad.setColorAt(1.0, QColor(0, 240, 255, 0))
+                    grad.setColorAt(0.3, QColor(accent.red(), accent.green(), accent.blue(), int(flash_alpha * 0.7)))
+                    grad.setColorAt(1.0, QColor(accent.red(), accent.green(), accent.blue(), 0))
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(QBrush(grad))
                     painter.drawEllipse(QPointF(cx, cy - 30.0), flash_rad, flash_rad)
+
+            effect_alpha = int(190 * global_alpha)
+            if 0.15 <= self._time < 3.2 and effect_alpha > 0:
+                painter.save()
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                if self._effect == "ORBITAL_IGNITION":
+                    for index in range(3):
+                        painter.save()
+                        painter.translate(cx, cy + 15.0)
+                        painter.rotate(self._time * (24 if index % 2 == 0 else -18) + index * 55)
+                        painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), effect_alpha - index * 35), 2.0))
+                        painter.drawEllipse(QRectF(-155 - index * 24, -34 - index * 4, 310 + index * 48, 68 + index * 8))
+                        painter.restore()
+                elif self._effect == "SINGULARITY":
+                    pulse = 1.0 + 0.08 * math.sin(self._time * 3.5)
+                    for index in range(6):
+                        radius = (34 + index * 27) * pulse
+                        alpha = max(12, effect_alpha - index * 25)
+                        painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), alpha), 1.5))
+                        painter.drawEllipse(QPointF(cx, cy + 15), radius, radius * 0.72)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QColor(2, 3, 5, effect_alpha))
+                    painter.drawEllipse(QPointF(cx, cy + 15), 25 * pulse, 25 * pulse)
+                elif self._effect == "NEURAL_PULSE":
+                    painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), effect_alpha // 2), 1.5))
+                    for index in range(17):
+                        x = w * (index + 1) / 18
+                        phase = self._time * 4 + index * 0.7
+                        height = 28 + abs(math.sin(phase)) * min(180, h * 0.16)
+                        painter.drawLine(QPointF(x, cy + 15 - height), QPointF(x, cy + 15 + height))
+                        painter.setBrush(QColor(accent.red(), accent.green(), accent.blue(), effect_alpha))
+                        painter.drawEllipse(QPointF(x, cy + 15 + math.sin(phase) * height), 3, 3)
+                else:
+                    painter.translate(cx, cy + 15)
+                    painter.rotate(self._time * 32)
+                    painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), effect_alpha), 2.0))
+                    painter.drawEllipse(QPointF(0, 0), 150, 150)
+                    painter.drawEllipse(QPointF(0, 0), 104, 104)
+                    for index in range(16):
+                        angle = math.radians(index * 22.5)
+                        inner = 36 if index % 2 == 0 else 62
+                        painter.drawLine(
+                            QPointF(math.cos(angle) * inner, math.sin(angle) * inner),
+                            QPointF(math.cos(angle) * 150, math.sin(angle) * 150),
+                        )
+                painter.restore()
 
             # Impact Shockwave at 2.5s
             if self._time >= 2.5:
@@ -7672,7 +7825,7 @@ class BootSequenceOverlay(QWidget):
                 sw_rad = sw_prog * 480.0
                 sw_alpha = int(255 * (1.0 - sw_prog) * global_alpha)
                 if sw_alpha > 0:
-                    sw_pen = QPen(QColor(0, 240, 255, sw_alpha), 3.0)
+                    sw_pen = QPen(QColor(accent.red(), accent.green(), accent.blue(), sw_alpha), 3.0)
                     painter.setPen(sw_pen)
                     painter.setBrush(Qt.BrushStyle.NoBrush)
                     painter.drawEllipse(QPointF(cx, cy + 55.0), sw_rad, sw_rad * 0.6)
@@ -10537,7 +10690,7 @@ class SystemConnectivitySidebar(QFrame):
 
     def refresh(self):
         if self._bridge() and hasattr(self._bridge(), "_win"):
-            version = "v1.0.0"
+            version = f"v{APP_VERSION}"
             platform_name = platform.system()
             provider = self._bridge()._win._load_app_settings().get("default_ai_provider", "Gemini")
             last_updated = time.strftime("%d %b %Y %H:%M")
@@ -10546,7 +10699,7 @@ class SystemConnectivitySidebar(QFrame):
             self._info_rows["Current AI Provider"].setText(provider)
             self._info_rows["Last Updated"].setText(last_updated)
         else:
-            self._info_rows["Version"].setText("v1.0.0")
+            self._info_rows["Version"].setText(f"v{APP_VERSION}")
             self._info_rows["Platform"].setText(platform.system())
             self._info_rows["Current AI Provider"].setText("Gemini")
             self._info_rows["Last Updated"].setText(time.strftime("%d %b %Y %H:%M"))
@@ -11121,7 +11274,7 @@ class SystemConnectivityPage(QWidget):
         lay.addWidget(identity_card)
 
         # AI Providers
-        card = self._card("AI Providers", "Only the supported providers are shown here.")
+        card = self._card("AI Providers", "Configure keys and model IDs for the supported cloud and local providers.")
         lay1 = card.layout()
         self._api_defaults = self._load_api_defaults()
         self._gemini_row, self._gemini_status, self._gemini_key = self._provider_row(
@@ -11145,10 +11298,51 @@ class SystemConnectivityPage(QWidget):
         lay1.addWidget(self._gemini_row)
         lay1.addWidget(self._or_row)
         lay1.addWidget(self._anthropic_row)
+        additional_card = self._card("More OpenAI-compatible providers", "Use your own provider key and model ID.")
+        additional_layout = QHBoxLayout()
+        self._additional_provider = QComboBox()
+        self._additional_provider_items = (
+            ("OpenAI", "openai"),
+            ("Groq", "groq"),
+            ("DeepSeek", "deepseek"),
+            ("Mistral", "mistral"),
+            ("Together AI", "together"),
+            ("Fireworks AI", "fireworks"),
+            ("xAI", "xai"),
+            ("Cerebras", "cerebras"),
+        )
+        for provider_name, provider_key in self._additional_provider_items:
+            self._additional_provider.addItem(provider_name, provider_key)
+        self._additional_provider.currentIndexChanged.connect(self._refresh_additional_provider_status)
+        additional_layout.addWidget(self._additional_provider, 1)
+        self._additional_provider_status = QLabel()
+        additional_layout.addWidget(self._additional_provider_status)
+        manage_additional = QPushButton("Manage API Key")
+        manage_additional.clicked.connect(
+            lambda: self._manage_api_keys(self._additional_provider.currentData())
+        )
+        additional_layout.addWidget(manage_additional)
+        additional_card.layout().addLayout(additional_layout)
+        lay1.addWidget(additional_card)
+        self._refresh_additional_provider_status()
+
         controls = QHBoxLayout()
         controls.setSpacing(12)
         self._default_provider = QComboBox()
-        self._default_provider.addItems(["Google Gemini", "OpenRouter", "Anthropic", "Local"])
+        self._default_provider.addItems([
+            "Google Gemini",
+            "OpenAI",
+            "Anthropic",
+            "OpenRouter",
+            "Groq",
+            "DeepSeek",
+            "Mistral",
+            "Together AI",
+            "Fireworks AI",
+            "xAI",
+            "Cerebras",
+            "Local",
+        ])
         
         current_provider = self._load_app_settings().get("default_ai_provider", "Gemini")
         if current_provider in {"Gemini", "Google Gemini"}:
@@ -11157,6 +11351,8 @@ class SystemConnectivityPage(QWidget):
             self._default_provider.setCurrentText("Anthropic")
         elif current_provider == "Local":
             self._default_provider.setCurrentText("Local")
+        elif current_provider in OPENAI_COMPATIBLE_PROVIDERS:
+            self._default_provider.setCurrentText(current_provider)
         else:
             self._default_provider.setCurrentText("OpenRouter")
             
@@ -11164,6 +11360,15 @@ class SystemConnectivityPage(QWidget):
         controls.addWidget(QLabel("Default AI Provider"))
         controls.addWidget(self._default_provider, 1)
         lay1.addLayout(controls)
+        model_controls = QHBoxLayout()
+        model_controls.addWidget(QLabel("Cloud model ID"))
+        self._cloud_model_input = QLineEdit()
+        self._cloud_model_input.setPlaceholderText("Provider default")
+        model_controls.addWidget(self._cloud_model_input, 1)
+        self._cloud_model_input.editingFinished.connect(self._save_cloud_model)
+        self._default_provider.currentTextChanged.connect(self._load_cloud_model)
+        lay1.addLayout(model_controls)
+        self._load_cloud_model(self._default_provider.currentText())
         
         # Local AI Settings
         self._local_ai_widget = QWidget()
@@ -11419,6 +11624,25 @@ class SystemConnectivityPage(QWidget):
         )
         live_voice_row.addWidget(self._gemini_voice, 1)
         voice_card.layout().addLayout(live_voice_row)
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(QLabel("Voice preset"))
+        self._speech_preset = QComboBox()
+        for preset_id, (title, _rate, _pitch) in SPEECH_PRESETS.items():
+            self._speech_preset.addItem(title, preset_id)
+        preset_index = self._speech_preset.findData(visual_settings.get("speech_preset", "STUDIO"))
+        self._speech_preset.setCurrentIndex(preset_index if preset_index >= 0 else 0)
+        self._speech_preset.currentIndexChanged.connect(
+            lambda index: self._set_setting("speech_preset", self._speech_preset.itemData(index))
+        )
+        preset_row.addWidget(self._speech_preset, 1)
+        self._voice_preview_btn = QPushButton("Preview voice")
+        self._voice_preview_btn.clicked.connect(self._preview_voice)
+        preset_row.addWidget(self._voice_preview_btn)
+        voice_card.layout().addLayout(preset_row)
+        voice_help = QLabel("Presets adjust speech pacing and pitch; voice availability depends on your selected TTS engine.")
+        voice_help.setWordWrap(True)
+        voice_help.setStyleSheet(f"color: {C.TEXT_DIM};")
+        voice_card.layout().addWidget(voice_help)
         lay.addWidget(voice_card)
 
         # Startup animation
@@ -11426,6 +11650,23 @@ class SystemConnectivityPage(QWidget):
         al = anim.layout()
         self._startup_anim_enable_btn = self._mk_toggle("Enable Startup Animation", bool(self._startup_animation_enabled()), self._toggle_startup_animation_from_page)
         al.addWidget(self._startup_anim_enable_btn)
+        effect_row = QHBoxLayout()
+        effect_row.addWidget(QLabel("Boot sequence"))
+        self._startup_effect = QComboBox()
+        for title, effect_id in (
+            ("Orbital ignition", "ORBITAL_IGNITION"),
+            ("Singularity", "SINGULARITY"),
+            ("Neural pulse", "NEURAL_PULSE"),
+            ("Quantum gate", "QUANTUM_GATE"),
+        ):
+            self._startup_effect.addItem(title, effect_id)
+        effect_index = self._startup_effect.findData(visual_settings.get("startup_effect", "ORBITAL_IGNITION"))
+        self._startup_effect.setCurrentIndex(effect_index if effect_index >= 0 else 0)
+        self._startup_effect.currentIndexChanged.connect(
+            lambda index: self._set_setting("startup_effect", self._startup_effect.itemData(index))
+        )
+        effect_row.addWidget(self._startup_effect, 1)
+        al.addLayout(effect_row)
         speed_row = QHBoxLayout()
         speed_row.addWidget(QLabel("Animation Speed"))
         self._anim_speed = QComboBox()
@@ -11486,7 +11727,7 @@ class SystemConnectivityPage(QWidget):
         about_grid.setHorizontalSpacing(22)
         about_grid.setVerticalSpacing(8)
         entries = [
-            ("Version", "v1.0.0"),
+            ("Version", f"v{APP_VERSION}"),
             ("Build Number", "2026.06.29"),
             ("Release Date", "29 Jun 2026"),
         ]
@@ -12516,7 +12757,7 @@ class SystemConnectivityPage(QWidget):
         self._sys_note.setStyleSheet(f"color: {C.TEXT_MED};")
         lay.addWidget(self._sys_online)
         lay.addWidget(self._sys_note)
-        self._sys_version = QLabel("v1.0.0")
+        self._sys_version = QLabel(f"v{APP_VERSION}")
         self._sys_platform = QLabel(platform.system())
         self._sys_provider = QLabel("Gemini")
         self._sys_updated = QLabel(time.strftime("%d %b %Y %H:%M"))
@@ -12614,6 +12855,57 @@ class SystemConnectivityPage(QWidget):
             except Exception:
                 pass
 
+    def _provider_name(self, label: str | None = None) -> str:
+        selected = (label or self._default_provider.currentText()).strip()
+        return "Gemini" if selected == "Google Gemini" else selected
+
+    def _load_cloud_model(self, label: str):
+        if not hasattr(self, "_cloud_model_input"):
+            return
+        provider = self._provider_name(label)
+        settings = self._load_app_settings()
+        model_overrides = settings.get("cloud_models", {})
+        configured = model_overrides.get(provider) if isinstance(model_overrides, dict) else None
+        if provider == "OpenRouter":
+            default = "auto"
+        elif provider in OPENAI_COMPATIBLE_PROVIDERS:
+            default = OPENAI_COMPATIBLE_PROVIDERS[provider]["model"]
+        else:
+            default = {
+                "Gemini": "gemini-2.5-flash",
+                "Anthropic": "claude-sonnet-4-20250514",
+                "Local": str(settings.get("local_ai_model", "qwen2.5:3b")),
+            }.get(provider, "auto")
+        self._cloud_model_input.setText(str(configured or default))
+        self._cloud_model_input.setEnabled(provider != "Local")
+
+    def _save_cloud_model(self):
+        provider = self._provider_name()
+        if provider == "Local":
+            return
+        settings = self._load_app_settings()
+        model_overrides = settings.get("cloud_models", {})
+        if not isinstance(model_overrides, dict):
+            model_overrides = {}
+        model = self._cloud_model_input.text().strip()
+        if model:
+            model_overrides[provider] = model
+        else:
+            model_overrides.pop(provider, None)
+        self._set_setting("cloud_models", model_overrides)
+
+    def _refresh_additional_provider_status(self, *_):
+        if not hasattr(self, "_additional_provider_status"):
+            return
+        provider_key = self._additional_provider.currentData()
+        provider = {
+            key: name for name, key in self._additional_provider_items
+        }.get(provider_key)
+        api_data = self._load_api_defaults()
+        self._additional_provider_status.setText(
+            "Key saved" if provider and get_active_key(api_data, provider) else "Key not set"
+        )
+
     def _set_visual_effect(self, key: str, enabled: bool):
         self._set_setting(key, bool(enabled))
         ctrl = self._ctrl()
@@ -12637,8 +12929,16 @@ class SystemConnectivityPage(QWidget):
     def _manage_api_keys(self, provider_key: str):
         providers = {
             "gemini": "Gemini",
+            "openai": "OpenAI",
             "openrouter": "OpenRouter",
             "anthropic": "Anthropic",
+            "groq": "Groq",
+            "deepseek": "DeepSeek",
+            "mistral": "Mistral",
+            "together": "Together AI",
+            "fireworks": "Fireworks AI",
+            "xai": "xAI",
+            "cerebras": "Cerebras",
         }
         provider = providers.get(provider_key)
         if provider is None:
@@ -12654,19 +12954,14 @@ class SystemConnectivityPage(QWidget):
         layout.addWidget(keys_combo)
         key_input = QLineEdit()
         key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        key_input.setPlaceholderText("Paste an API key; provider detected automatically")
+        key_input.setPlaceholderText(f"Paste a {provider} API key")
         layout.addWidget(key_input)
         status = QLabel("Keys are stored in your local app configuration.")
         status.setWordWrap(True)
         layout.addWidget(status)
 
         def refresh_keys():
-            active_field = {
-                "Gemini": "gemini_api_key",
-                "OpenRouter": "openrouter_api_key",
-                "Anthropic": "anthropic_api_key",
-            }[provider]
-            active_key = data.get(active_field, "")
+            active_key = get_active_key(data, provider)
             keys_combo.clear()
             for key in get_provider_keys(data, provider):
                 active = " (active)" if key == active_key else ""
@@ -12679,18 +12974,23 @@ class SystemConnectivityPage(QWidget):
         def add_key():
             key = key_input.text().strip()
             detected = detect_provider(key)
-            if not key or detected is None:
-                QMessageBox.warning(dialog, "Unrecognized key", "Use a Gemini (AIza...), OpenRouter (sk-or-...), or Anthropic (sk-ant-...) API key.")
+            if not key:
+                QMessageBox.warning(dialog, "Missing API key", "Enter an API key for the selected provider.")
                 return
-            if detected != provider:
+            if detected is not None and detected != provider:
                 QMessageBox.warning(dialog, "Wrong provider", f"This key belongs to {detected}, not {provider}.")
                 return
-            add_api_key(data, key)
+            try:
+                add_api_key(data, key, provider)
+            except ValueError as exc:
+                QMessageBox.warning(dialog, "Invalid API key", str(exc))
+                return
             save_data()
             key_input.clear()
-            status.setText(f"Detected and saved {detected} key. It is now active.")
+            status.setText(f"Saved a {provider} key. It is now active.")
             refresh_keys()
             self.refresh()
+            self._refresh_additional_provider_status()
 
         def use_selected():
             key = keys_combo.currentData()
@@ -12701,6 +13001,7 @@ class SystemConnectivityPage(QWidget):
             status.setText("Active key updated for existing Brahma features.")
             refresh_keys()
             self.refresh()
+            self._refresh_additional_provider_status()
 
         def delete_selected():
             key = keys_combo.currentData()
@@ -12711,6 +13012,7 @@ class SystemConnectivityPage(QWidget):
             status.setText("Key removed.")
             refresh_keys()
             self.refresh()
+            self._refresh_additional_provider_status()
 
         refresh_keys()
         actions = QHBoxLayout()
@@ -12732,6 +13034,14 @@ class SystemConnectivityPage(QWidget):
             "gemini": ("Gemini", "Google Gemini"),
             "openrouter": ("OpenRouter", "OpenRouter"),
             "anthropic": ("Anthropic", "Anthropic"),
+            "openai": ("OpenAI", "OpenAI"),
+            "groq": ("Groq", "Groq"),
+            "deepseek": ("DeepSeek", "DeepSeek"),
+            "mistral": ("Mistral", "Mistral"),
+            "together": ("Together AI", "Together AI"),
+            "fireworks": ("Fireworks AI", "Fireworks AI"),
+            "xai": ("xAI", "xAI"),
+            "cerebras": ("Cerebras", "Cerebras"),
         }
         provider, label = providers.get(setting_key, ("OpenRouter", "OpenRouter"))
         count = len(get_provider_keys(self._load_api_defaults(), provider))
@@ -12821,7 +13131,7 @@ class SystemConnectivityPage(QWidget):
             if hasattr(self, "_local_ai_widget"):
                 self._local_ai_widget.setVisible(False)
             msg = "SYS: Default AI provider set to Anthropic Claude. Cloud connectivity active."
-        else:
+        elif raw == "openrouter":
             provider = "OpenRouter"
             self._set_setting("offline_mode_enabled", False)
             if hasattr(self, "_offline_mode_btn"):
@@ -12831,6 +13141,16 @@ class SystemConnectivityPage(QWidget):
             if hasattr(self, "_local_ai_widget"):
                 self._local_ai_widget.setVisible(False)
             msg = "SYS: Default AI provider set to OpenRouter. Cloud connectivity active."
+        else:
+            provider = text
+            self._set_setting("offline_mode_enabled", False)
+            if hasattr(self, "_offline_mode_btn"):
+                self._offline_mode_btn.blockSignals(True)
+                self._offline_mode_btn.setChecked(False)
+                self._offline_mode_btn.blockSignals(False)
+            if hasattr(self, "_local_ai_widget"):
+                self._local_ai_widget.setVisible(False)
+            msg = f"SYS: Default AI provider set to {provider}. Cloud connectivity active."
         self._set_setting("default_ai_provider", provider)
         if hasattr(self, "_sys_provider"):
             self._sys_provider.setText(provider)
@@ -12880,6 +13200,12 @@ class SystemConnectivityPage(QWidget):
             self._ctrl().write_log(f"SYS: Incoming call prompts {'enabled' if checked else 'disabled'}.")
 
     def _preview_animation(self):
+        ctrl = self._ctrl()
+        window = getattr(ctrl, "_win", None) if ctrl else None
+        if window and hasattr(window, "_preview_boot_sequence"):
+            effect = self._startup_effect.currentData() if hasattr(self, "_startup_effect") else "ORBITAL_IGNITION"
+            window._preview_boot_sequence(effect)
+            return
         self._preview_progress.setValue(0)
         if hasattr(self, "_preview_timer") and self._preview_timer:
             try:
@@ -12897,6 +13223,13 @@ class SystemConnectivityPage(QWidget):
             self._preview_timer.stop()
             if self._ctrl() and hasattr(self._ctrl(), "write_log"):
                 self._ctrl().write_log("SYS: Startup animation preview finished.")
+
+    def _preview_voice(self):
+        from actions.attention_monitor import speak_native
+        threading.Thread(
+            target=lambda: speak_native("Brahma online. Your selected voice preset is ready.", force_edge=True),
+            daemon=True,
+        ).start()
 
     def _toggle_discord_reveal(self, checked: bool):
         self._discord_token.setEchoMode(QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password)
@@ -14526,6 +14859,7 @@ class BrahmaUI:
         self._command_bar.attach_clicked.connect(self._browse_attachment)
         self._command_bar.mic_clicked.connect(self._toggle_mute)
         self._command_bar.developer_clicked.connect(self._open_developer_mode_dialog)
+        self._command_bar.skills_clicked.connect(self._open_skill_library)
         self._workspace_sidebar.command_submitted.connect(self._submit_command)
         self._workspace_sidebar.attach_requested.connect(self._browse_attachment)
         self._workspace_sidebar.mic_requested.connect(self._toggle_mute)
@@ -14785,8 +15119,9 @@ class BrahmaUI:
 
     def play_boot_sequence(self, finished_callback=None):
         self._mark_boot_sequence_played()
+        effect = self._load_app_settings().get("startup_effect", "ORBITAL_IGNITION")
         if self._boot_overlay is None:
-            self._boot_overlay = BootSequenceOverlay()
+            self._boot_overlay = BootSequenceOverlay(effect=effect)
             def _on_boot_finished():
                 try:
                     self._win.setWindowState(
@@ -14807,7 +15142,23 @@ class BrahmaUI:
                     except Exception:
                         pass
             self._boot_overlay.finished.connect(_on_boot_finished)
+        else:
+            self._boot_overlay.set_effect(effect)
         self._boot_overlay.start()
+
+    def _preview_boot_sequence(self, effect: str):
+        if self._boot_overlay is not None and self._boot_overlay._tmr.isActive():
+            return
+        overlay = BootSequenceOverlay(effect=effect)
+        self._boot_overlay = overlay
+
+        def clear_preview():
+            if self._boot_overlay is overlay:
+                self._boot_overlay = None
+            overlay.deleteLater()
+
+        overlay.finished.connect(clear_preview)
+        overlay.start()
 
     # Thread-safe helpers for driving the boot overlay from background threads
     def boot_add_step(self, text: str):
@@ -15014,6 +15365,13 @@ class BrahmaUI:
 
     def _submit_command(self, text: str):
         self._win.submit_command(text)
+
+    def _open_skill_library(self):
+        dialog = DesktopSkillLibraryDialog(self._win)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_skill is not None:
+            skill = dialog.selected_skill
+            self._command_bar.set_input_text(f"{skill.title}\n\n{skill.prompt}")
+            self._command_bar.show_near(self._launcher)
 
     def _browse_attachment(self):
         self._win._browse_attachment()
@@ -15317,6 +15675,3 @@ class BrahmaUI:
     def stop_speaking(self):
         if not self.muted:
             self.set_state("LISTENING")
-
-
-

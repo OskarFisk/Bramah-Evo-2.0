@@ -67,6 +67,15 @@
   - Instagram & Smart Home
   - Instant live test-connection buttons.
 
+### 9. 🎨 Desktop personalization and skill library
+- Search and filter **200 assistant workflow templates** covering coding in 20 languages, game/performance analysis, apps and system maintenance, file organization, and learning/productivity.
+- Choose the Cyber Cyan, Plasma Violet, Solar Ember, Matrix Green, Glacier Blue, or Crimson Core accent theme, alongside the existing custom color and effect controls.
+- Select and preview Orbital Ignition, Singularity, Neural Pulse, or Quantum Gate startup animations.
+- Choose Studio, Calm, Bright, or Cinematic speech pacing/pitch presets, and preview the selected installed Edge voice.
+- Configure OpenAI, Groq, DeepSeek, Mistral, Together AI, Fireworks AI, xAI, and Cerebras API keys and model IDs, in addition to Gemini, OpenRouter, Anthropic, and local models.
+
+Skill cards prepare a prompt for Brahma; they are not 200 new native system commands. Desktop actions continue to use the existing capability checks, permissions, and confirmation behavior. File moves/deletions and process changes require explicit user approval. Voice previews use the selected Edge TTS voice; the app does not bundle or silently download third-party voice files.
+
 ---
 
 ## 🛠️ Core Capabilities

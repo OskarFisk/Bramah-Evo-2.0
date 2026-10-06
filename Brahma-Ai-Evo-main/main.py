@@ -88,6 +88,7 @@ from actions.attention_monitor import AttentionMonitor, speak_native, stop_nativ
 # from actions.daily_briefing import compile_daily_briefing
 from llm_client import client as openrouter_client
 from core.anthropic_client import chat as anthropic_chat
+from core.ai_providers import OPENAI_COMPATIBLE_PROVIDERS
 from workspace_store import store as workspace_store
 from smart_home.service import SmartHomeService
 from plugin_manager import PluginManager
@@ -312,12 +313,15 @@ def _gemini_text_reply(prompt: str) -> str:
         api_key=_get_api_key(),
         http_options={"api_version": "v1beta"},
     )
+    settings = config_manager.load_settings()
+    model_overrides = settings.get("cloud_models", {})
+    model = model_overrides.get("Gemini", "gemini-2.5-flash") if isinstance(model_overrides, dict) else "gemini-2.5-flash"
     system_prompt = (
         "You are Brahma Evo, a concise, helpful desktop assistant. "
         "Reply naturally and briefly. Do not mention internal implementation details."
     )
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model=model,
         contents=f"{system_prompt}\n\nUser: {prompt}",
         config={"temperature": 0.6},
     )
@@ -3715,6 +3719,10 @@ class BrahmaLive:
             is_cloud_gemini = configured_provider in ("Gemini", "Google Gemini")
             is_cloud_openrouter = configured_provider == "OpenRouter"
             is_cloud_anthropic = configured_provider == "Anthropic"
+            is_cloud_openai_compatible = (
+                configured_provider in OPENAI_COMPATIBLE_PROVIDERS
+                and configured_provider != "OpenRouter"
+            )
 
             # 1. If user explicitly selected Google Gemini, run Gemini FIRST
             if is_cloud_gemini and not is_offline_mode:
@@ -3765,8 +3773,26 @@ class BrahmaLive:
                 except Exception as e_anthropic:
                     print(f"[BRAHMA EVO] Anthropic failed: {e_anthropic}")
 
+            elif is_cloud_openai_compatible and not is_offline_mode:
+                try:
+                    self.ui.update_task_workspace(
+                        status=f"Thinking ({configured_provider})",
+                        output=f"Processing on {configured_provider}...",
+                        percent=50,
+                    )
+                    reply = openrouter_client.chat(
+                        request_text,
+                        system=(
+                            "You are Brahma Evo, a concise, helpful desktop assistant. "
+                            "Reply naturally and briefly. Do not mention internal implementation details."
+                        ),
+                    )
+                    print(f"[BRAHMA EVO] {configured_provider} answered successfully!")
+                except Exception as provider_error:
+                    print(f"[BRAHMA EVO] {configured_provider} failed: {provider_error}")
+
             # 3. If user explicitly configured Local AI, is in Offline Mode, or cloud provider failed: run Local Brain
-            if not reply and (configured_provider == "Local" or is_offline_mode or not (is_cloud_gemini or is_cloud_openrouter or is_cloud_anthropic) or bool(app_settings.get("auto_provider_switch", True))) and local_brain.is_available():
+            if not reply and (configured_provider == "Local" or is_offline_mode or not (is_cloud_gemini or is_cloud_openrouter or is_cloud_anthropic or is_cloud_openai_compatible) or bool(app_settings.get("auto_provider_switch", True))) and local_brain.is_available():
                 try:
                     self.ui.update_task_workspace(
                         status="Thinking (Local AI)",

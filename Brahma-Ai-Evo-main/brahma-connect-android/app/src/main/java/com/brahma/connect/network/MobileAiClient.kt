@@ -16,6 +16,9 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+internal fun apiKeyHeaderValue(keyHeader: String, apiKey: String): String =
+    if (keyHeader == "Authorization") "Bearer $apiKey" else apiKey
+
 object MobileAiClient {
     private const val MAX_TOOL_ROUNDS = 5
     private const val SYSTEM_PROMPT =
@@ -270,9 +273,7 @@ object MobileAiClient {
         val requestBuilder = Request.Builder()
             .url(endpoint.toHttpUrl())
             .post(body.toString().toRequestBody(jsonMediaType))
-        if (keyHeader == "Authorization") requestBuilder.header(keyHeader, "Bearer $apiKey")
-        else requestBuilder.header(keyHeader, apiKey)
-        if (keyHeader == "Authorization") requestBuilder.header("Authorization", "Bearer $apiKey")
+        requestBuilder.header(keyHeader, apiKeyHeaderValue(keyHeader, apiKey))
         extraHeaders.forEach { (name, value) -> requestBuilder.header(name, value) }
 
         val responseText = httpClient.newCall(requestBuilder.build()).execute().use { response ->

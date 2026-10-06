@@ -1,5 +1,6 @@
 package com.brahma.connect.ui
 
+import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -37,6 +39,27 @@ fun ChatScreen(
     onSendMessage: (String) -> Unit
 ) {
     val chatHistory by AgentStateStore.chatHistory.collectAsState()
+    val speakReplies by AgentStateStore.speakReplies.collectAsState()
+    val voicePreset by AgentStateStore.voicePreset.collectAsState()
+    val context = LocalContext.current
+    val speech = remember(context) { TextToSpeech(context) {} }
+    DisposableEffect(speech) {
+        onDispose {
+            speech.stop()
+            speech.shutdown()
+        }
+    }
+    LaunchedEffect(voicePreset) {
+        speech.setLanguage(Locale.getDefault())
+        speech.setPitch(voicePreset.pitch)
+        speech.setSpeechRate(voicePreset.rate)
+    }
+    val latestMessage = chatHistory.lastOrNull()
+    LaunchedEffect(latestMessage?.id, speakReplies) {
+        if (speakReplies && latestMessage != null && latestMessage.role.lowercase() != "user") {
+            speech.speak(latestMessage.text, TextToSpeech.QUEUE_FLUSH, null, latestMessage.id)
+        }
+    }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var inputText by remember { mutableStateOf("") }
@@ -48,8 +71,6 @@ fun ChatScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        HolographicBackground()
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -192,12 +213,12 @@ fun ChatMessageBubble(message: ChatMessage) {
                         )
                     )
                     .background(
-                        if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
-                        else Color(0xFF222222)
+                        if (isUser) MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
+                        else MaterialTheme.colorScheme.surfaceVariant
                     )
                     .border(
                         1.dp,
-                        if (isUser) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.1f),
+                        if (isUser) MaterialTheme.colorScheme.secondary else Color.White.copy(alpha = 0.1f),
                         RoundedCornerShape(
                             topStart = 16.dp,
                             topEnd = 16.dp,
@@ -209,7 +230,7 @@ fun ChatMessageBubble(message: ChatMessage) {
             ) {
                 Text(
                     text = message.text,
-                    color = if (isUser) Color.Black else Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 15.sp,
                     lineHeight = 22.sp
                 )
