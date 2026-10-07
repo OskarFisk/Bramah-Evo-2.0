@@ -8,7 +8,6 @@ the EXE/APK files are not stored in this source repository.
 
 | Product | Platform | Download | Release |
 | --- | --- | --- | --- |
-| A.U.R.O.R.A Desktop Assistant | Windows x64 | [A.U.R.O.R.A.exe](https://github.com/OskarFisk/Aurora-AI-Desktop-Asisstant/releases/download/v1.1.0/A.U.R.O.R.A.exe) | [v1.1.0](https://github.com/OskarFisk/Aurora-AI-Desktop-Asisstant/releases/tag/v1.1.0) |
 | Brahma Evo desktop | Windows x64 | [Brahma-evo-enhanced-version.exe](https://github.com/OskarFisk/Bramah-Evo-2.0/releases/download/v3.3.0/Brahma-evo-enhanced-version.exe) | [v3.3.0](https://github.com/OskarFisk/Bramah-Evo-2.0/releases/tag/v3.3.0) |
 | Brahma Evo Mobile | Android | [Brahma-Evo-Mobile.apk](https://github.com/OskarFisk/Bramah-Evo-2.0/releases/download/v3.3.0/Brahma-Evo-Mobile.apk) | [v3.3.0](https://github.com/OskarFisk/Bramah-Evo-2.0/releases/tag/v3.3.0) |
 | Brahma Evo V3 companion | Android | [Brahma-Evo-V3.apk](https://github.com/OskarFisk/Bramah-Evo-2.0/releases/download/v3.3.0/Brahma-Evo-V3.apk) | [v3.3.0](https://github.com/OskarFisk/Bramah-Evo-2.0/releases/tag/v3.3.0) |
